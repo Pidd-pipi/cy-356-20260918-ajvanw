@@ -121,6 +121,8 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_plots_status ON plots(status);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON planting_plans(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_status ON planting_plans(status);
+-- 一块认养地同一时间只允许一条未完成种植计划（completed 后可重建），并发提交由该索引兜底只成功一条
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_plans_active_plot ON planting_plans(plot_id) WHERE status <> 'completed';
 CREATE INDEX IF NOT EXISTS idx_harvest_user ON harvest_records(user_id);
 CREATE INDEX IF NOT EXISTS idx_diary_user ON diary_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_type ON community_posts(post_type);

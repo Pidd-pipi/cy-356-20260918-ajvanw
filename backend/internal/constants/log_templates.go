@@ -20,6 +20,7 @@ const (
 	LogPlotAdopted            = "plot adopted, plot_id=%d code=%s user_id=%d role=%s"
 	LogPlotReleased           = "plot released, plot_id=%d code=%s operator=%s"
 	LogPlanCreated            = "planting plan created, plan_id=%d plot_id=%d user_id=%d crop=%s"
+	LogPlanCreateRejected     = "planting plan create rejected, plot_id=%d user_id=%d active_plan_id=%d active_status=%s"
 	LogPlanStatusChanged      = "planting plan status changed, plan_id=%d user_id=%d from=%s to=%s"
 	LogPlanCompleted          = "planting plan completed, plan_id=%d user_id=%d harvest_count=%d"
 	LogHarvestRecorded        = "harvest recorded, harvest_id=%d plan_id=%d weight_kg=%.2f quality=%s"

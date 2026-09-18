@@ -117,7 +117,7 @@ README.md
 | --- | --- | --- |
 | RoleType 角色 | admin / farmer / citizen | `constants/enums.go`、`model/user.go`、`dto/user_dto.go`、`service/user_service.go`（ChangeRole 校验）、`middleware/rbac.go`、`middleware/audit.go`、`handler/planting_plan_handler.go`、`handler/harvest_handler.go`、`handler/diary_handler.go`、`util/formatters.go`、`log_templates.go`、`error_codes.go`、`database/database.go`（种子数据） |
 | PlotStatus 地块状态 | available / adopted / harvested | `constants/enums.go`、`model/plot.go`、`dto/plot_dto.go`、`service/plot_service.go`（认养/释放状态机）、`repository/plot_repository.go`（过滤）、`util/formatters.go`、`log_templates.go`、`database/database.go`（种子数据）、`api/openapi.yaml` |
-| PlanStatus 种植计划状态 | planned / planting / growing / harvesting / completed | `constants/enums.go`、`model/planting_plan.go`、`dto/planting_plan_dto.go`（oneof 校验）、`service/planting_plan_service.go`（PlanStatusTransitions 状态机）、`handler/planting_plan_handler.go`、`util/formatters.go`、`log_templates.go`、`error_codes.go`（CodePlanStateNotAllowed）、`database/database.go`（种子数据）、前端 `constants/index.ts`（PlanStatusMeta / PlanStatusNext 按钮显隐） |
+| PlanStatus 种植计划状态 | planned / planting / growing / harvesting / completed | `constants/enums.go`（含 `ActivePlanStatuses` 未完成状态集合）、`model/planting_plan.go`（`uniq_plans_active_plot` 部分唯一索引）、`dto/planting_plan_dto.go`（oneof 校验）、`service/planting_plan_service.go`（PlanStatusTransitions 状态机 + Create 唯一未完成计划守卫）、`repository/planting_plan_repository.go`（FindActiveByPlotID）、`handler/planting_plan_handler.go`、`util/formatters.go`、`log_templates.go`、`error_codes.go`（CodePlanStateNotAllowed / CodePlanActiveExists）、`database/database.go`（种子数据）、`database/init.sql`（部分唯一索引）、前端 `constants/index.ts`（PlanStatusMeta / PlanStatusNext 按钮显隐 / ActivePlanStatuses 地块禁用） |
 | CropType 作物类型 | vegetable / fruit / herb | `constants/enums.go`、`model/planting_plan.go`、`dto/planting_plan_dto.go`、`service/planting_plan_service.go`（成熟时间估算）、`util/formatters.go`、`repository/harvest_record_repository.go`（分组统计）、`database/database.go` |
 | Season 季节 | spring / summer / autumn / winter | `constants/enums.go`、`dto/planting_plan_dto.go`、`service/planting_plan_service.go`（SeasonCrops 推荐表）、`util/formatters.go`、`database/database.go`、前端 `pages/PlantingPlan.vue`、`pages/Dashboard.vue` |
 | DiaryAction 日记动作 | sowing / watering / fertilizing / pest_control / harvest / other | `constants/enums.go`、`model/diary_entry.go`、`dto/diary_entry_dto.go`、`util/formatters.go`、`database/database.go`、`log_templates.go` |
@@ -158,7 +158,7 @@ README.md
 | 方法 | 路径 | 说明 | 鉴权 |
 | --- | --- | --- | --- |
 | GET | `/planting-plans` | 计划列表 | 登录 |
-| POST | `/planting-plans` | 创建计划（季节校验 + 收获时间线） | 登录 |
+| POST | `/planting-plans` | 创建计划（认养校验 + 一块地仅一条未完成计划 + 季节校验 + 收获时间线） | 登录 |
 | GET | `/planting-plans/:id` | 计划详情 | 登录 |
 | PUT | `/planting-plans/:id` | 更新计划（仅 planned） | 登录 |
 | POST | `/planting-plans/:id/status` | 状态流转（状态机） | 登录 |

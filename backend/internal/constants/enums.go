@@ -60,6 +60,15 @@ const (
 	PlanStatusCompleted  PlanStatus = "completed"
 )
 
+// ActivePlanStatuses 未完成（占用地块）的计划状态集合：一块认养地同一时间只允许一条未完成计划，
+// service 拒绝重复创建、repository 查询占用计划、前端制定计划窗口禁用地块共用此集合。
+var ActivePlanStatuses = []PlanStatus{
+	PlanStatusPlanned,
+	PlanStatusPlanting,
+	PlanStatusGrowing,
+	PlanStatusHarvesting,
+}
+
 // CropType 作物类型
 type CropType string
 

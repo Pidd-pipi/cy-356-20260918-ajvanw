@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/communitygarden/server/internal/constants"
 	"github.com/communitygarden/server/internal/model"
 	"github.com/communitygarden/server/internal/util"
 )
@@ -16,6 +17,7 @@ type PlantingPlanRepository interface {
 	Update(p *model.PlantingPlan) error
 	UpdateWithTx(tx *gorm.DB, p *model.PlantingPlan) error
 	FindByID(id uint) (*model.PlantingPlan, error)
+	FindActiveByPlotID(tx *gorm.DB, plotID uint) (*model.PlantingPlan, error)
 	List(pq util.PageQuery, userID uint, status string) ([]model.PlantingPlan, int64, error)
 	ListByUser(userID uint, pq util.PageQuery) ([]model.PlantingPlan, int64, error)
 	CountByUser(userID uint) (int64, error)
@@ -53,6 +55,24 @@ func (r *plantingPlanRepository) Update(p *model.PlantingPlan) error {
 func (r *plantingPlanRepository) FindByID(id uint) (*model.PlantingPlan, error) {
 	var p model.PlantingPlan
 	if err := r.db.Preload("Plot").Preload("User").First(&p, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+// FindActiveByPlotID 查询地块未完成（占用中）的种植计划。
+// 必须在事务内调用：先由 plotRepo.FindByIDForUpdate 锁住地块行，再执行本查询，
+// 使并发创建在同一地块上串行化，后提交的事务能读到先提交事务的活跃计划并拒绝。
+func (r *plantingPlanRepository) FindActiveByPlotID(tx *gorm.DB, plotID uint) (*model.PlantingPlan, error) {
+	statuses := make([]string, 0, len(constants.ActivePlanStatuses))
+	for _, s := range constants.ActivePlanStatuses {
+		statuses = append(statuses, string(s))
+	}
+	var p model.PlantingPlan
+	if err := tx.Where("plot_id = ? AND status IN ?", plotID, statuses).Order("id DESC").First(&p).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}

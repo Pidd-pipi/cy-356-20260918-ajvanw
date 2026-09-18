@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -38,7 +39,11 @@ func NewPlantingPlanService(planRepo repository.PlantingPlanRepository, plotRepo
 	return &PlantingPlanService{planRepo: planRepo, plotRepo: plotRepo, plotSvc: plotSvc, db: db, logger: logger}
 }
 
-// Create 创建种植计划（事务：锁定地块、校验认养关系、季节推荐校验、生成收获时间线）。
+// Create 创建种植计划（事务：锁定地块、校验认养关系、唯一未完成计划守卫、季节推荐校验、生成收获时间线）。
+// 一块地同一时间只允许一条未完成计划（planned/planting/growing/harvesting）：
+// 已存在活跃计划时直接拒绝并保留原记录；计划完成后才允许重新创建。
+// 并发安全：地块行锁（FOR UPDATE）串行化同一地块的创建，uniq_plans_active_plot 部分唯一索引兜底，
+// 整个流程在单事务内，失败方回滚不会留下半条计划。
 func (s *PlantingPlanService) Create(req *dto.CreatePlanRequest, userID uint) (*model.PlantingPlan, error) {
 	var created *model.PlantingPlan
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -51,6 +56,14 @@ func (s *PlantingPlanService) Create(req *dto.CreatePlanRequest, userID uint) (*
 		}
 		if plot.Status != string(constants.PlotStatusAdopted) || plot.AdopterID == nil || *plot.AdopterID != userID {
 			return util.NewAppError(constants.CodeForbidden, 403, fmt.Sprintf("地块 %s 未由用户 id=%d 认养，无法创建种植计划", plot.Code, userID))
+		}
+		active, err := s.planRepo.FindActiveByPlotID(tx, req.PlotID)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
+		}
+		if active != nil {
+			s.logger.Warn(constants.LogPlanCreateRejected, "plot_id", plot.ID, "user_id", userID, "active_plan_id", active.ID, "active_status", active.Status)
+			return util.NewAppError(constants.CodePlanActiveExists, 409, fmt.Sprintf("地块 %s 已存在状态为「%s」的未完成种植计划 id=%d，计划完成后才能重新创建", plot.Code, util.PlanStatusText(active.Status), active.ID))
 		}
 		season := constants.Season(req.Season)
 		crops, ok := constants.SeasonCrops[season]
@@ -82,6 +95,10 @@ func (s *PlantingPlanService) Create(req *dto.CreatePlanRequest, userID uint) (*
 			Notes:               req.Notes,
 		}
 		if err := s.planRepo.CreateWithTx(tx, plan); err != nil {
+			if strings.Contains(err.Error(), "uniq_plans_active_plot") {
+				s.logger.Warn(constants.LogPlanCreateRejected, "plot_id", plot.ID, "user_id", userID, "active_plan_id", 0, "active_status", "unique_index_conflict")
+				return util.NewAppError(constants.CodePlanActiveExists, 409, fmt.Sprintf("地块 %s 已存在未完成的种植计划，并发提交仅允许一条成功", plot.Code))
+			}
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
 		created = plan

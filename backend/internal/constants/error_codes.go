@@ -22,6 +22,7 @@ const (
 	CodeDuplicateUsername    = 2007
 	CodeInvalidCredentials   = 2008
 	CodeUserDisabled         = 2009
+	CodePlanActiveExists     = 2010
 )
 
 // ErrorText 错误码默认文案（service/handler 可覆盖拼接更具体的 message）
@@ -44,4 +45,5 @@ var ErrorText = map[int]string{
 	CodeDuplicateUsername: "用户名已被占用",
 	CodeInvalidCredentials: "用户名或密码错误",
 	CodeUserDisabled:      "账号已被禁用",
+	CodePlanActiveExists:  "地块已存在未完成的种植计划",
 }

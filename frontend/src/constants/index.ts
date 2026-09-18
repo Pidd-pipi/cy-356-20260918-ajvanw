@@ -37,6 +37,9 @@ export const PlanStatusActions: Record<string, string> = {
   harvesting: '标记完成',
   completed: ''
 }
+// 未完成（占用地块）的计划状态集合（与后端 constants.ActivePlanStatuses 对应）：
+// 一块认养地同一时间只允许一条未完成计划，制定计划窗口中这些状态的地块不可选
+export const ActivePlanStatuses: string[] = ['planned', 'planting', 'growing', 'harvesting']
 
 export type CropType = 'vegetable' | 'fruit' | 'herb'
 export const CropTypeText: Record<string, string> = {

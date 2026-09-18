@@ -18,4 +18,8 @@ type Plot struct {
 	Description string    `gorm:"size:512" json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+
+	// ActivePlan 地块当前未完成的种植计划（非持久化字段，由 service 按查询场景填充：
+	// 制定种植计划窗口据此禁用地块并展示占用状态）。
+	ActivePlan *PlantingPlan `gorm:"-" json:"-"`
 }

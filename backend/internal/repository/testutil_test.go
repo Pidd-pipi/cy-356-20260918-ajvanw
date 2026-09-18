@@ -15,9 +15,10 @@ import (
 var testDBCounter uint64
 
 // testDSN 生成唯一的内存 SQLite DSN，避免跨测试共享数据。
+// busy_timeout 让并发写事务等待而非立即报 database is locked。
 func testDSN() string {
 	n := atomic.AddUint64(&testDBCounter, 1)
-	return fmt.Sprintf("file:memdb%d?mode=memory&cache=shared", n)
+	return fmt.Sprintf("file:memdb%d?mode=memory&cache=shared&_pragma=busy_timeout(5000)", n)
 }
 
 // newTestDB 创建内存 SQLite 测试库并完成迁移。

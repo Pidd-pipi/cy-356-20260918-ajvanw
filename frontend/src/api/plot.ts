@@ -1,6 +1,15 @@
 import { get, post } from '@/utils/request'
 import type { UserInfo } from './auth'
 
+export interface ActivePlanInfo {
+  id: number
+  crop_name: string
+  status: string
+  status_text: string
+  user_id: number
+  username: string
+}
+
 export interface Plot {
   id: number
   name: string
@@ -14,6 +23,7 @@ export interface Plot {
   adopter_id: number | null
   adopter: UserInfo | null
   description: string
+  active_plan: ActivePlanInfo | null
   created_at: string
 }
 

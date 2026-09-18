@@ -17,9 +17,10 @@ import (
 var serviceTestDBCounter uint64
 
 // serviceTestDSN 生成唯一的内存 SQLite DSN。
+// busy_timeout 让并发写事务等待而非立即报 database is locked（并发唯一索引测试需要）。
 func serviceTestDSN() string {
 	n := atomic.AddUint64(&serviceTestDBCounter, 1)
-	return fmt.Sprintf("file:memdb%d?mode=memory&cache=shared", n)
+	return fmt.Sprintf("file:memdb%d?mode=memory&cache=shared&_pragma=busy_timeout(5000)", n)
 }
 
 // newTestServiceDB 创建内存 SQLite 测试库。
@@ -72,6 +73,7 @@ func newTestPlot(t *testing.T, db *gorm.DB, code, status string, adopterID *uint
 func newPlotService(t *testing.T, db *gorm.DB) (*PlotService, repository.PlotRepository) {
 	t.Helper()
 	plotRepo := repository.NewPlotRepository(db)
-	svc := NewPlotService(plotRepo, db, testLogger())
+	planRepo := repository.NewPlantingPlanRepository(db)
+	svc := NewPlotService(plotRepo, planRepo, db, testLogger())
 	return svc, plotRepo
 }

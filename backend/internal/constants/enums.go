@@ -60,6 +60,25 @@ const (
 	PlanStatusCompleted  PlanStatus = "completed"
 )
 
+// ActivePlanStatuses 未完成种植计划状态集合（计划/播种/生长/采收）。
+// 一块地同时只允许存在一条处于这些状态的计划；completed 不受此约束。
+// service 预检、repository 查询、数据库部分唯一索引与前端地块可选判断共用这一组状态。
+var ActivePlanStatuses = []PlanStatus{
+	PlanStatusPlanned,
+	PlanStatusPlanting,
+	PlanStatusGrowing,
+	PlanStatusHarvesting,
+}
+
+// ActivePlanStatusValues 返回未完成状态的字符串切片（GORM 查询参数使用）。
+func ActivePlanStatusValues() []string {
+	out := make([]string, 0, len(ActivePlanStatuses))
+	for _, s := range ActivePlanStatuses {
+		out = append(out, string(s))
+	}
+	return out
+}
+
 // CropType 作物类型
 type CropType string
 

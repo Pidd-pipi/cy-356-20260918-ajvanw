@@ -45,9 +45,28 @@
     <el-dialog v-model="createVisible" title="制定种植计划" width="520px">
       <el-form :model="createForm" label-width="90px">
         <el-form-item label="地块">
-          <el-select v-model="createForm.plot_id" placeholder="选择已认养地块">
-            <el-option v-for="p in myAdoptedPlots" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
+          <el-select v-model="createForm.plot_id" placeholder="选择我认养的、空闲可种植的地块">
+            <el-option
+              v-for="p in myPlotOptions"
+              :key="p.id"
+              :label="plotOptionLabel(p)"
+              :value="p.id"
+              :disabled="!!p.active_plan"
+            />
           </el-select>
+          <div v-if="occupiedPlots.length" class="occupied-tip">
+            <el-icon><Warning /></el-icon>
+            <span>
+              以下地块已有未完成种植计划，需完成（或释放后重新认养）才能再制定：
+              <span v-for="p in occupiedPlots" :key="p.id" class="occupied-item">
+                {{ p.code }}（{{ p.active_plan!.status_text || PlanStatusMeta[p.active_plan!.status]?.label }} · {{ p.active_plan!.crop_name }}）
+              </span>
+            </span>
+          </div>
+          <div v-else-if="!myPlotOptions.length" class="occupied-tip">
+            <el-icon><Warning /></el-icon>
+            <span>你名下没有已认养的地块，请先到“地块认养”页认养一块地。</span>
+          </div>
         </el-form-item>
         <el-form-item label="作物名称"><el-input v-model="createForm.crop_name" placeholder="如 番茄 / 菠菜" /></el-form-item>
         <el-form-item label="作物类型">
@@ -71,11 +90,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Warning } from '@element-plus/icons-vue'
 import { usePlanStore } from '@/stores/plantingPlan'
 import { type PlantingPlan } from '@/api/plantingPlan'
-import { listPlots } from '@/api/plot'
+import { listPlots, type Plot } from '@/api/plot'
+import { useAuth } from '@/hooks/useAuth'
 import { usePagination } from '@/hooks/usePagination'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -84,12 +105,24 @@ import { formatDate } from '@/utils/format'
 
 const store = usePlanStore()
 const pagination = usePagination()
+const { user } = useAuth()
 const season = ref<string>('spring')
 const recommendations = ref<string[]>([])
 const createVisible = ref(false)
 const creating = ref(false)
-const myAdoptedPlots = ref<Array<{ id: number; code: string; name: string }>>([])
+// 制定计划窗口展示“我认养的”地块；已有未完成计划的地块保留在列表中但禁用并说明占用状态。
+const myPlotOptions = ref<Plot[]>([])
+// 被未完成计划占用的地块（不可选）。
+const occupiedPlots = computed(() => myPlotOptions.value.filter((p) => !!p.active_plan))
 const createForm = reactive({ plot_id: undefined as number | undefined, crop_name: '', crop_type: 'vegetable', season: 'spring', notes: '' })
+
+function plotOptionLabel(p: Plot): string {
+  if (p.active_plan) {
+    const statusText = p.active_plan.status_text || PlanStatusMeta[p.active_plan.status]?.label || p.active_plan.status
+    return `${p.code} ${p.name}（占用中：${statusText} · ${p.active_plan.crop_name}）`
+  }
+  return `${p.code} ${p.name}（可制定计划）`
+}
 
 async function fetch() {
   await store.fetchPlans({ page: pagination.page.value, page_size: pagination.size.value })
@@ -112,17 +145,21 @@ async function loadRecommendations() {
 
 async function openCreate() {
   createVisible.value = true
+  createForm.plot_id = undefined
   try {
     const data = await listPlots({ page: 1, page_size: 100 })
-    myAdoptedPlots.value = data.list.filter((p) => p.status === 'adopted').map((p) => ({ id: p.id, code: p.code, name: p.name }))
+    // 只能给自己认养的地块制定计划；harvested（上一季已完成待释放）与被未完成计划占用的地块均不可再选。
+    myPlotOptions.value = data.list.filter(
+      (p) => p.status === 'adopted' && p.adopter_id === user.value?.id
+    )
   } catch {
-    myAdoptedPlots.value = []
+    myPlotOptions.value = []
   }
 }
 
 async function submitCreate() {
   if (!createForm.plot_id) {
-    ElMessage.warning('请选择已认养的地块（先到“地块认养”页认养）')
+    ElMessage.warning('请选择一块未被占用的已认养地块')
     return
   }
   creating.value = true
@@ -146,3 +183,19 @@ onMounted(() => {
   loadRecommendations()
 })
 </script>
+
+<style scoped>
+.occupied-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #b88230;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.occupied-item {
+  margin-left: 4px;
+  white-space: nowrap;
+}
+</style>

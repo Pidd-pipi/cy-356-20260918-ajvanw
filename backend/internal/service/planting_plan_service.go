@@ -38,7 +38,13 @@ func NewPlantingPlanService(planRepo repository.PlantingPlanRepository, plotRepo
 	return &PlantingPlanService{planRepo: planRepo, plotRepo: plotRepo, plotSvc: plotSvc, db: db, logger: logger}
 }
 
-// Create 创建种植计划（事务：锁定地块、校验认养关系、季节推荐校验、生成收获时间线）。
+// Create 创建种植计划（事务：锁定地块、校验认养关系、校验地块是否已有未完成计划、
+// 季节推荐校验、生成收获时间线）。
+//
+// 一块地同时只允许存在一条未完成计划（planned/planting/growing/harvesting）：
+//   - 事务先对地块行加 FOR UPDATE 锁，再查询未完成计划，串行化并发提交，重复提交直接 409 拒绝；
+//   - planting_plans 上另有部分唯一索引兜底（WHERE status <> 'completed'），
+//     万一绕过预检，插入会被数据库拒绝并整体回滚，失败方不会留下半条计划。
 func (s *PlantingPlanService) Create(req *dto.CreatePlanRequest, userID uint) (*model.PlantingPlan, error) {
 	var created *model.PlantingPlan
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -51,6 +57,16 @@ func (s *PlantingPlanService) Create(req *dto.CreatePlanRequest, userID uint) (*
 		}
 		if plot.Status != string(constants.PlotStatusAdopted) || plot.AdopterID == nil || *plot.AdopterID != userID {
 			return util.NewAppError(constants.CodeForbidden, 403, fmt.Sprintf("地块 %s 未由用户 id=%d 认养，无法创建种植计划", plot.Code, userID))
+		}
+		// 占用校验：已有未完成计划时直接拒绝，保留原计划记录不动。
+		active, err := s.planRepo.FindActiveByPlotForUpdate(tx, req.PlotID)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
+		}
+		if active != nil {
+			return util.NewAppError(constants.CodePlanAlreadyActive, 409,
+				fmt.Sprintf("地块 %s 已存在未完成种植计划 id=%d（当前状态：%s，作物：%s），需完成后才能重新制定",
+					plot.Code, active.ID, util.PlanStatusText(active.Status), active.CropName))
 		}
 		season := constants.Season(req.Season)
 		crops, ok := constants.SeasonCrops[season]
@@ -82,6 +98,11 @@ func (s *PlantingPlanService) Create(req *dto.CreatePlanRequest, userID uint) (*
 			Notes:               req.Notes,
 		}
 		if err := s.planRepo.CreateWithTx(tx, plan); err != nil {
+			// 并发兜底：部分唯一索引冲突说明该地块已被其他事务抢先创建未完成计划。
+			if repository.IsDuplicateKeyErr(err) {
+				return util.NewAppError(constants.CodePlanAlreadyActive, 409,
+					fmt.Sprintf("地块 %s 刚被其他请求创建了未完成种植计划，请刷新后重试", plot.Code))
+			}
 			return util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 		}
 		created = plan

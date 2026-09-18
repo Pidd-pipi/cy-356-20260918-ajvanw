@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/communitygarden/server/internal/constants"
 	"github.com/communitygarden/server/internal/model"
 	"github.com/communitygarden/server/internal/util"
 )
@@ -16,6 +17,8 @@ type PlantingPlanRepository interface {
 	Update(p *model.PlantingPlan) error
 	UpdateWithTx(tx *gorm.DB, p *model.PlantingPlan) error
 	FindByID(id uint) (*model.PlantingPlan, error)
+	FindActiveByPlotForUpdate(tx *gorm.DB, plotID uint) (*model.PlantingPlan, error)
+	FindActiveByPlots(plotIDs []uint) ([]model.PlantingPlan, error)
 	List(pq util.PageQuery, userID uint, status string) ([]model.PlantingPlan, int64, error)
 	ListByUser(userID uint, pq util.PageQuery) ([]model.PlantingPlan, int64, error)
 	CountByUser(userID uint) (int64, error)
@@ -59,6 +62,40 @@ func (r *plantingPlanRepository) FindByID(id uint) (*model.PlantingPlan, error) 
 		return nil, err
 	}
 	return &p, nil
+}
+
+// FindActiveByPlotForUpdate 查询地块当前未完成（非 completed）的种植计划。
+// 必须在持有地块 FOR UPDATE 行锁的事务内调用：与地块行锁串行化，
+// 保证并发的两次创建最多只有一条成功。不存在时返回 ErrNotFound。
+func (r *plantingPlanRepository) FindActiveByPlotForUpdate(tx *gorm.DB, plotID uint) (*model.PlantingPlan, error) {
+	var p model.PlantingPlan
+	err := tx.Where("plot_id = ? AND status IN ?", plotID, constants.ActivePlanStatusValues()).
+		Order("id DESC").
+		First(&p).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+// FindActiveByPlots 批量查询多块地的未完成种植计划（制定计划窗口展示占用状态使用）。
+// 部分唯一索引保证每个 plot_id 最多一条；包含 id 最大的历史未完成记录以防脏数据。
+func (r *plantingPlanRepository) FindActiveByPlots(plotIDs []uint) ([]model.PlantingPlan, error) {
+	plans := make([]model.PlantingPlan, 0)
+	if len(plotIDs) == 0 {
+		return plans, nil
+	}
+	err := r.db.Preload("User").
+		Where("plot_id IN ? AND status IN ?", plotIDs, constants.ActivePlanStatusValues()).
+		Order("id DESC").
+		Find(&plans).Error
+	if err != nil {
+		return nil, err
+	}
+	return plans, nil
 }
 
 func (r *plantingPlanRepository) List(pq util.PageQuery, userID uint, status string) ([]model.PlantingPlan, int64, error) {
@@ -112,7 +149,7 @@ func (r *plantingPlanRepository) CountByStatus() (map[string]int64, error) {
 func (r *plantingPlanRepository) CountActiveByUser(userID uint) (int64, error) {
 	var total int64
 	err := r.db.Model(&model.PlantingPlan{}).
-		Where("user_id = ? AND status IN ?", userID, []string{"planned", "planting", "growing", "harvesting"}).
+		Where("user_id = ? AND status IN ?", userID, constants.ActivePlanStatusValues()).
 		Count(&total).Error
 	return total, err
 }

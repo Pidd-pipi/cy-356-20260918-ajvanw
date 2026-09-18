@@ -28,7 +28,7 @@ paths:
   /plots:
     get:
       tags: [plots]
-      summary: 地块列表（公开）
+      summary: 地块列表（公开，每条记录附带 active_plan 未完成种植计划占用信息，制定计划窗口据此禁用地块）
       responses: { '200': { description: 成功 } }
     post:
       tags: [plots]
@@ -37,7 +37,7 @@ paths:
   /plots/{id}:
     get:
       tags: [plots]
-      summary: 地块详情
+      summary: 地块详情（含 active_plan 当前未完成种植计划占用信息）
       parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
       responses: { '200': { description: 成功 } }
     put:
@@ -61,8 +61,10 @@ paths:
       responses: { '200': { description: 成功 } }
     post:
       tags: [planting-plans]
-      summary: 创建种植计划
-      responses: { '200': { description: 成功 } }
+      summary: 创建种植计划（地块已有未完成计划时返回 409 code=2010；并发提交仅一条成功，事务回滚不留残记录）
+      responses:
+        '200': { description: 成功 }
+        '409': { description: 地块已存在未完成种植计划（CodePlanAlreadyActive=2010） }
   /planting-plans/{id}:
     get:
       tags: [planting-plans]

@@ -17,13 +17,57 @@ import (
 // PlotService 地块服务（认养使用事务 + SELECT FOR UPDATE）。
 type PlotService struct {
 	plotRepo repository.PlotRepository
+	planRepo repository.PlantingPlanRepository
 	db       *gorm.DB
 	logger   *slog.Logger
 }
 
 // NewPlotService 构造地块服务。
-func NewPlotService(plotRepo repository.PlotRepository, db *gorm.DB, logger *slog.Logger) *PlotService {
-	return &PlotService{plotRepo: plotRepo, db: db, logger: logger}
+func NewPlotService(plotRepo repository.PlotRepository, planRepo repository.PlantingPlanRepository, db *gorm.DB, logger *slog.Logger) *PlotService {
+	return &PlotService{plotRepo: plotRepo, planRepo: planRepo, db: db, logger: logger}
+}
+
+// attachActivePlan 填充单个地块当前未完成的种植计划（制定计划窗口展示占用状态）。
+func (s *PlotService) attachActivePlan(p *model.Plot) error {
+	active, err := s.planRepo.FindActiveByPlots([]uint{p.ID})
+	if err != nil {
+		return err
+	}
+	for i := range active {
+		plan := active[i]
+		p.ActivePlan = &plan
+		break
+	}
+	return nil
+}
+
+// attachActivePlans 批量填充各地块当前未完成的种植计划（制定计划窗口展示占用状态）。
+func (s *PlotService) attachActivePlans(plots []model.Plot) error {
+	if len(plots) == 0 {
+		return nil
+	}
+	plotIDs := make([]uint, 0, len(plots))
+	for i := range plots {
+		plotIDs = append(plotIDs, plots[i].ID)
+	}
+	active, err := s.planRepo.FindActiveByPlots(plotIDs)
+	if err != nil {
+		return err
+	}
+	activeByPlot := make(map[uint]model.PlantingPlan, len(active))
+	for i := range active {
+		// 部分唯一索引保证每块地至多一条未完成计划。
+		if _, exists := activeByPlot[active[i].PlotID]; !exists {
+			activeByPlot[active[i].PlotID] = active[i]
+		}
+	}
+	for i := range plots {
+		if plan, ok := activeByPlot[plots[i].ID]; ok {
+			plan := plan
+			plots[i].ActivePlan = &plan
+		}
+	}
+	return nil
 }
 
 // GetByID 查询地块详情（被地块 handler 与种植计划 service 复用）。
@@ -33,6 +77,9 @@ func (s *PlotService) GetByID(id uint) (*model.Plot, error) {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, util.NewAppError(constants.CodeNotFound, 404, fmt.Sprintf("地块实体 id=%d 不存在", id))
 		}
+		return nil, util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
+	}
+	if err := s.attachActivePlan(p); err != nil {
 		return nil, util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 	}
 	return p, nil
@@ -100,10 +147,13 @@ func (s *PlotService) Update(id uint, req *dto.UpdatePlotRequest, operator strin
 	return p, nil
 }
 
-// List 分页查询地块（可过滤状态）。
+// List 分页查询地块（可过滤状态），并填充各地块当前未完成种植计划的占用信息。
 func (s *PlotService) List(pq util.PageQuery, status string) ([]model.Plot, int64, error) {
 	plots, total, err := s.plotRepo.List(pq, status)
 	if err != nil {
+		return nil, 0, util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
+	}
+	if err := s.attachActivePlans(plots); err != nil {
 		return nil, 0, util.NewAppError(constants.CodeInternalError, 500, constants.ErrorText[constants.CodeInternalError]).Wrap(err)
 	}
 	return plots, total, nil

@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_plots_status ON plots(status);
 CREATE INDEX IF NOT EXISTS idx_plans_user ON planting_plans(user_id);
 CREATE INDEX IF NOT EXISTS idx_plans_status ON planting_plans(status);
+-- 业务约束：一块地同时只允许存在一条未完成（非 completed）的种植计划。
+-- 部分唯一索引：completed 的历史计划不参与约束，计划完成并重新认养后可再次创建。
+-- 并发提交时由数据库兜底，失败事务整体回滚，不会留下半条计划。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_plan_per_plot
+    ON planting_plans(plot_id)
+    WHERE status <> 'completed';
+CREATE INDEX IF NOT EXISTS idx_plans_plot ON planting_plans(plot_id);
 CREATE INDEX IF NOT EXISTS idx_harvest_user ON harvest_records(user_id);
 CREATE INDEX IF NOT EXISTS idx_diary_user ON diary_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_type ON community_posts(post_type);
